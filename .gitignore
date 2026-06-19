@@ -1,1 +1,9 @@
 backend/model/medicine_model.h5
+
+# Secrets - never commit credentials
+.env
+backend/.env
+
+# Python
+__pycache__/
+*.pyc

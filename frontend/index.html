@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Medication Box Recognition</title>
+<style>
+  /* ─────────────────────────────────────────────────────────────────────
+     All styling lives here. Colours are defined once as variables so the
+     whole theme can be changed from one place.
+  ───────────────────────────────────────────────────────────────────── */
+  :root {
+    --teal:        #0d9488;
+    --teal-dark:   #0f766e;
+    --teal-light:  #ccfbf1;
+    --ink:         #1e293b;
+    --muted:       #64748b;
+    --bg-1:        #ecfeff;
+    --bg-2:        #f0fdfa;
+    --card:        #ffffff;
+    --ok:          #16a34a;
+    --warn:        #d97706;
+    --bad:         #dc2626;
+    --line:        #e2e8f0;
+    --radius:      16px;
+    --shadow:      0 10px 30px rgba(15, 118, 110, 0.12);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+    color: var(--ink);
+    background: linear-gradient(160deg, var(--bg-1), var(--bg-2));
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px 64px;
+  }
+
+  header { text-align: center; margin-bottom: 28px; }
+  header h1 {
+    margin: 0;
+    font-size: 1.9rem;
+    letter-spacing: -0.5px;
+  }
+  header h1 .pill {
+    color: var(--teal-dark);
+  }
+  header p { margin: 6px 0 0; color: var(--muted); }
+
+  .container { width: 100%; max-width: 880px; }
+
+  /* ── Upload area ───────────────────────────────────────────────── */
+  .uploader {
+    background: var(--card);
+    border: 2px dashed var(--teal);
+    border-radius: var(--radius);
+    padding: 40px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, transform 0.1s;
+    box-shadow: var(--shadow);
+  }
+  .uploader:hover { background: var(--teal-light); }
+  .uploader.dragover {
+    background: var(--teal-light);
+    border-color: var(--teal-dark);
+    transform: scale(1.01);
+  }
+  .uploader .icon { font-size: 3rem; line-height: 1; }
+  .uploader h2 { margin: 12px 0 4px; font-size: 1.15rem; }
+  .uploader p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+  #fileInput { display: none; }
+
+  /* ── Buttons ───────────────────────────────────────────────────── */
+  .btn {
+    appearance: none;
+    border: none;
+    background: var(--teal);
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 12px 28px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+  }
+  .btn:hover { background: var(--teal-dark); }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { background: #94a3b8; cursor: not-allowed; }
+  .actions { text-align: center; margin: 20px 0; }
+
+  /* ── Loading spinner ───────────────────────────────────────────── */
+  .spinner {
+    display: none;
+    margin: 30px auto;
+    width: 46px; height: 46px;
+    border: 5px solid var(--teal-light);
+    border-top-color: var(--teal);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Result layout ─────────────────────────────────────────────── */
+  .result {
+    display: none;
+    margin-top: 8px;
+    gap: 20px;
+    grid-template-columns: 260px 1fr;
+  }
+  .result.show { display: grid; }
+  @media (max-width: 640px) { .result.show { grid-template-columns: 1fr; } }
+
+  .preview-card, .info-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .preview-card img { width: 100%; display: block; }
+
+  .info-card { padding: 22px 24px; }
+
+  .badge {
+    display: inline-block;
+    padding: 5px 14px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: #fff;
+  }
+  .badge.ok   { background: var(--ok); }
+  .badge.warn { background: var(--warn); }
+  .badge.bad  { background: var(--bad); }
+
+  .med-name {
+    font-size: 1.7rem;
+    font-weight: 700;
+    margin: 14px 0 2px;
+    text-transform: capitalize;
+  }
+  .med-name-ar {
+    font-size: 1.3rem;
+    color: var(--teal-dark);
+    margin: 0 0 16px;
+  }
+
+  .rows { width: 100%; border-collapse: collapse; }
+  .rows td { padding: 9px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .rows tr:last-child td { border-bottom: none; }
+  .rows .label { color: var(--muted); font-size: 0.85rem; width: 130px; }
+  .rows .value { font-weight: 600; }
+  .ar { direction: rtl; text-align: right; font-size: 1.05rem; }
+
+  /* ── Confidence bar ────────────────────────────────────────────── */
+  .conf-wrap { margin: 4px 0 18px; }
+  .conf-track {
+    height: 12px;
+    background: var(--line);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .conf-fill {
+    height: 100%;
+    border-radius: 999px;
+    width: 0;
+    transition: width 0.6s ease;
+  }
+  .conf-label { font-size: 0.85rem; color: var(--muted); margin-top: 6px; }
+
+  /* ── Candidate list (partial match) ────────────────────────────── */
+  .candidates { margin-top: 14px; }
+  .candidate {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 10px;
+    margin-bottom: 8px;
+  }
+  .candidate .dose { font-weight: 700; }
+  .candidate .form-ar { direction: rtl; color: var(--teal-dark); }
+
+  /* ── Technical details (collapsible) ───────────────────────────── */
+  details {
+    margin-top: 18px;
+    background: #f8fafc;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 6px 14px;
+  }
+  details summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--muted);
+    padding: 8px 0;
+  }
+  .tech td { font-size: 0.85rem; }
+  .ocr-text {
+    font-family: Consolas, monospace;
+    font-size: 0.8rem;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    max-height: 120px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .chip {
+    display: inline-block;
+    background: var(--teal-light);
+    color: var(--teal-dark);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 0.78rem;
+    margin: 0 4px 4px 0;
+  }
+
+  /* ── Error banner ──────────────────────────────────────────────── */
+  .error {
+    display: none;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: var(--bad);
+    border-radius: 12px;
+    padding: 16px 18px;
+    margin-top: 16px;
+    text-align: center;
+  }
+  .error.show { display: block; }
+  .error code {
+    background: #fff;
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 1px solid #fecaca;
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>💊 Medication Box <span class="pill">Recognition</span></h1>
+    <p>Upload a photo of a medicine box — it will be identified in French &amp; Arabic.</p>
+  </header>
+
+  <div class="container">
+
+    <!-- Upload area: clicking it opens the file picker; you can also drag a file onto it -->
+    <div class="uploader" id="uploader">
+      <div class="icon">📷</div>
+      <h2>Click to choose an image</h2>
+      <p>or drag &amp; drop a photo here · JPG, PNG, WEBP</p>
+    </div>
+    <input type="file" id="fileInput" accept="image/*" />
+
+    <div class="actions">
+      <button class="btn" id="recognizeBtn" disabled>Recognize</button>
+    </div>
+
+    <div class="spinner" id="spinner"></div>
+
+    <!-- Friendly error (e.g. the API server isn't running) -->
+    <div class="error" id="error"></div>
+
+    <!-- Results get filled in by JavaScript -->
+    <div class="result" id="result">
+      <div class="preview-card">
+        <img id="previewImg" alt="uploaded medicine box" />
+      </div>
+      <div class="info-card" id="infoCard"></div>
+    </div>
+
+  </div>
+
+<script>
+  // ─────────────────────────────────────────────────────────────────────
+  //  CONFIG: where your API is running. If you start uvicorn on a different
+  //  port, change this line.
+  // ─────────────────────────────────────────────────────────────────────
+  const API_URL = "http://localhost:8000/recognize";
+
+  // Grab the elements we need to work with.
+  const uploader     = document.getElementById("uploader");
+  const fileInput    = document.getElementById("fileInput");
+  const recognizeBtn = document.getElementById("recognizeBtn");
+  const spinner      = document.getElementById("spinner");
+  const result       = document.getElementById("result");
+  const infoCard     = document.getElementById("infoCard");
+  const previewImg   = document.getElementById("previewImg");
+  const errorBox     = document.getElementById("error");
+
+  let selectedFile = null;
+
+  // ── Choosing a file ──────────────────────────────────────────────────
+  uploader.addEventListener("click", () => fileInput.click());
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files.length) handleFile(fileInput.files[0]);
+  });
+
+  // ── Drag & drop ──────────────────────────────────────────────────────
+  uploader.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    uploader.classList.add("dragover");
+  });
+  uploader.addEventListener("dragleave", () => uploader.classList.remove("dragover"));
+  uploader.addEventListener("drop", (e) => {
+    e.preventDefault();
+    uploader.classList.remove("dragover");
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+
+  function handleFile(file) {
+    if (!file.type.startsWith("image/")) {
+      showError("Please choose an image file (JPG, PNG, or WEBP).");
+      return;
+    }
+    selectedFile = file;
+    previewImg.src = URL.createObjectURL(file);   // show a local preview
+    uploader.querySelector("h2").textContent = "✓ " + file.name;
+    recognizeBtn.disabled = false;
+    hideError();
+  }
+
+  // ── Sending the image to the API ─────────────────────────────────────
+  recognizeBtn.addEventListener("click", async () => {
+    if (!selectedFile) return;
+
+    hideError();
+    result.classList.remove("show");
+    spinner.style.display = "block";
+    recognizeBtn.disabled = true;
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);     // key must be "file" (matches app.py)
+
+      const response = await fetch(API_URL, { method: "POST", body: formData });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({}));
+        throw new Error(detail.detail || ("Server returned status " + response.status));
+      }
+      const data = await response.json();
+      render(data);
+    } catch (err) {
+      // Most common cause: the API server isn't running.
+      if (err.message.includes("Failed to fetch")) {
+        showError(
+          "Could not reach the API. Make sure the server is running:<br><br>" +
+          "<code>cd backend</code><br><code>python -m uvicorn app:app --reload</code>"
+        );
+      } else {
+        showError(err.message);
+      }
+    } finally {
+      spinner.style.display = "none";
+      recognizeBtn.disabled = false;
+    }
+  });
+
+  // ── Building the result card from the JSON the API returns ───────────
+  function render(d) {
+    let html = "";
+
+    // Status badge + headline
+    const statusMap = {
+      matched:   { cls: "ok",   text: "Exact variant" },
+      partial:   { cls: "warn", text: "Dosage not confirmed" },
+      not_in_db: { cls: "warn", text: "Not in database" },
+      rejected:  { cls: "bad",  text: "Not a medicine" },
+    };
+    let s = statusMap[d.status] || { cls: "warn", text: d.status };
+    // If the name was NOT read from the box (CNN fallback), the whole result is
+    // a visual guess we couldn't verify — never show it as a confident match.
+    if (d.status !== "rejected" && d.name_source !== "OCR text") {
+      s = { cls: "warn", text: "Unverified — visual guess" };
+    }
+    html += `<span class="badge ${s.cls}">${s.text}</span>`;
+
+    // Rejected: explain why and stop.
+    if (d.status === "rejected") {
+      html += `<p class="med-name" style="color:var(--bad)">Image rejected</p>`;
+      html += `<p style="color:var(--muted)">${d.reason || ""}</p>`;
+      infoCard.innerHTML = html + techDetails(d);
+      result.classList.add("show");
+      return;
+    }
+
+    // Medicine name (FR) + Arabic. The name comes from medicine_name (decided
+    // by OCR text when possible, else the CNN).
+    const med = d.medicine || {};
+    html += `<div class="med-name">${d.medicine_name || d.cnn_prediction}</div>`;
+    if (med.name_ar) html += `<div class="med-name-ar" dir="rtl">${med.name_ar}</div>`;
+
+    // Confidence bar. If the name came from the OCR text, show that match
+    // strength (reliable); otherwise show the CNN's visual confidence.
+    const fromOCR = d.name_source === "OCR text";
+    const c = fromOCR ? d.name_match_score : d.confidence;
+    const color = c >= 80 ? "var(--ok)" : c >= 50 ? "var(--warn)" : "var(--bad)";
+    const label = fromOCR
+      ? `Name identified from box text · <b>${c}%</b>`
+      : `CNN visual confidence: <b>${c}%</b>`;
+    html += `
+      <div class="conf-wrap">
+        <div class="conf-track"><div class="conf-fill" style="background:${color}"></div></div>
+        <div class="conf-label">${label}</div>
+      </div>`;
+
+    // Dosage + form
+    const rows = [];
+    if (d.status === "matched" && d.exact_variant) {
+      const v = d.exact_variant;
+      rows.push(["Dosage", v.dosage]);
+      rows.push(["Form (FR)", v.form || "—"]);
+      if (v.form_ar) rows.push(["Form (AR)", `<span class="ar">${v.form_ar}</span>`]);
+    }
+    if (med.usage_fr) rows.push(["Usage (FR)", med.usage_fr]);
+    if (med.usage_ar) rows.push(["Usage (AR)", `<span class="ar">${med.usage_ar}</span>`]);
+
+    if (rows.length) {
+      html += `<table class="rows">`;
+      for (const [label, value] of rows) {
+        html += `<tr><td class="label">${label}</td><td class="value">${value}</td></tr>`;
+      }
+      html += `</table>`;
+    }
+
+    // Partial match: list the possible variants we couldn't narrow down.
+    if (d.status === "partial" && d.candidates) {
+      const det = d.detected || {};
+      const hint = [];
+      if (det.dosage) hint.push(`dosage <b>${det.dosage}</b>`);
+      if (det.form)   hint.push(`form <b>${det.form}</b>`);
+      html += `<div class="candidates">`;
+      html += `<p style="color:var(--muted);margin:14px 0 8px">` +
+              `Couldn't pin down the exact box` +
+              (hint.length ? ` (detected ${hint.join(", ")})` : "") +
+              `. Possible variants:</p>`;
+      for (const v of d.candidates) {
+        html += `<div class="candidate">
+                   <span class="dose">${v.dosage}</span>
+                   <span>${v.form || "?"}</span>
+                   <span class="form-ar">${v.form_ar || ""}</span>
+                 </div>`;
+      }
+      html += `</div>`;
+    }
+
+    infoCard.innerHTML = html + techDetails(d);
+    result.classList.add("show");
+
+    // Animate the confidence bar after the card is shown.
+    requestAnimationFrame(() => {
+      const fill = infoCard.querySelector(".conf-fill");
+      if (fill) fill.style.width = c + "%";
+    });
+  }
+
+  // Collapsible technical section (OCR text, language, OpenCV analysis).
+  function techDetails(d) {
+    const a = d.image_analysis || {};
+    const applied = (a.applied && a.applied.length)
+      ? a.applied.map(x => `<span class="chip">${x}</span>`).join("")
+      : `<span class="chip">none — image quality OK</span>`;
+    return `
+      <details>
+        <summary>🔬 Technical details</summary>
+        <table class="rows tech">
+          <tr><td class="label">Name source</td><td>${d.name_source || "—"}</td></tr>
+          <tr><td class="label">CNN guess</td><td>${d.cnn_prediction || "—"} (${d.confidence ?? "—"}%)</td></tr>
+          <tr><td class="label">Language</td><td>${d.language || "—"}</td></tr>
+          <tr><td class="label">Text found</td><td>${d.has_text ? "yes" : "no"}</td></tr>
+          <tr><td class="label">Brightness</td><td>${a.brightness ?? "—"}</td></tr>
+          <tr><td class="label">Contrast</td><td>${a.contrast ?? "—"}</td></tr>
+          <tr><td class="label">Sharpness</td><td>${a.sharpness ?? "—"}</td></tr>
+          <tr><td class="label">OpenCV applied</td><td>${applied}</td></tr>
+        </table>
+        <p class="label" style="margin:12px 0 6px">Raw OCR text:</p>
+        <div class="ocr-text">${(d.ocr_text || "").trim() || "(none)"}</div>
+      </details>`;
+  }
+
+  function showError(msg) { errorBox.innerHTML = msg; errorBox.classList.add("show"); }
+  function hideError()    { errorBox.classList.remove("show"); }
+</script>
+</body>
+</html>

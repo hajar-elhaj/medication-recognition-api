@@ -1,0 +1,18 @@
+# ── Core / ML ────────────────────────────────────────────────────────────────
+tensorflow>=2.16            # CNN classifier (MobileNetV2 transfer learning)
+numpy
+opencv-python               # adaptive image preprocessing
+easyocr                     # OCR (French + Arabic); pulls in torch + torchvision
+rapidfuzz                   # fuzzy medicine-name matching
+
+# ── Database ─────────────────────────────────────────────────────────────────
+mysql-connector-python
+python-dotenv               # load DB credentials from backend/.env
+
+# ── REST API ─────────────────────────────────────────────────────────────────
+fastapi
+uvicorn[standard]           # ASGI server that runs the API
+python-multipart            # required by FastAPI for image file uploads
+
+# NOTE: easyocr installs the CPU build of torch on Windows. For GPU acceleration
+# (much faster OCR) reinstall torch with CUDA — see the README "GPU acceleration".
