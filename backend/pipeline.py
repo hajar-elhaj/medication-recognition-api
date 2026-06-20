@@ -24,14 +24,30 @@ def clean_text(text):
     return text
 
 
+def _has_readable_text(text):
+    """True if OCR produced enough real words to trust it actually read the box.
+
+    This is what tells two very different failures apart:
+      - "this medicine isn't in our database" — the box text was read clearly
+        (≥2 real words) but matched no known name. The medicine name is printed
+        on the box, so if it were one of ours, OCR would have found it.
+      - "the image was too poor to read" — almost no text came out, so the only
+        signal left is the CNN's visual guess.
+    """
+    words = re.findall(r"[a-zA-Z؀-ۿ]{3,}", text or "")
+    return len(words) >= 2
+
+
 def recognize(image_path):
     """Run the full recognition pipeline on an image file.
 
     Returns a dict describing the result. The 'status' field is one of:
-      'rejected' — the image is not a medicine box (other fields explain why)
-      'matched'  — an exact dosage+form variant was identified
-      'partial'  — the medicine is known but the exact box couldn't be pinned
-      'not_in_db'— the CNN class isn't present in the database
+      'rejected'     — the image is not a medicine box (other fields explain why)
+      'unrecognized' — the box text was read clearly but matches no medicine in
+                       our database (e.g. a real medicine we simply don't stock)
+      'matched'      — an exact dosage+form variant was identified
+      'partial'      — the medicine is known but the exact box couldn't be pinned
+      'not_in_db'    — the CNN class isn't present in the database
     """
     # ── CNN PREDICTION ──────────────────────────────────────────────────────
     medicine, confidence = predict_medicine(image_path)
@@ -44,11 +60,13 @@ def recognize(image_path):
     ocr_text = clean_text(extract_text(preprocessed))
     language = detect_language(ocr_text)
 
-    # ── DECIDE THE MEDICINE NAME ────────────────────────────────────────────
+    # ── LOAD KNOWN NAMES ────────────────────────────────────────────────────
     # The name is printed on the box, so the OCR text identifies it far more
     # reliably than the CNN (which only sees the image and confuses similar
-    # boxes). Strategy: trust a confident fuzzy name match from the OCR text;
-    # fall back to the CNN only when the text gives us no clear name.
+    # boxes). Strategy below, in order: (1) trust a confident fuzzy name match
+    # from the OCR text; (2) if the text was read clearly but matches nothing,
+    # the medicine isn't in our DB → 'unrecognized' (no CNN guess); (3) only
+    # when the text is unreadable do we fall back to the CNN's visual guess.
     db = get_connection()
     cursor = db.cursor()
     cursor.execute("SELECT DISTINCT name, name_ar FROM medicines")
@@ -57,17 +75,11 @@ def recognize(image_path):
     name_ar_map = {r[0]: r[1] for r in name_rows if r[1]}
 
     ocr_name, name_score = match_name(ocr_text, known_names, name_ar=name_ar_map)
-    if ocr_name:
-        medicine = ocr_name           # OCR is authoritative for the name
-        name_source = "OCR text"
-    else:
-        name_source = "CNN"           # no name in the text — fall back to CNN
 
+    # Fields shared by every return path.
     result = {
         "cnn_prediction": result_cnn,
         "confidence": round(confidence, 1),
-        "medicine_name": medicine,
-        "name_source": name_source,
         "name_match_score": round(name_score, 1),
         "image_analysis": {
             "brightness": round(report["brightness"], 1),
@@ -80,15 +92,49 @@ def recognize(image_path):
         "has_text": has_text(ocr_text),
     }
 
-    # ── INPUT VALIDATION ────────────────────────────────────────────────────
-    # A confident OCR name match is itself strong proof this is a real medicine.
+    # ── DECIDE THE MEDICINE NAME + VALIDATE ─────────────────────────────────
     if ocr_name:
-        ok, reason = True, f"OCR text matches known medicine '{ocr_name}' ({name_score:.0f}% similarity)"
-    elif medicine == "other":
-        ok, reason = False, f"CNN classified the image as 'other' ({confidence:.1f}%)"
-    else:
+        # A known name was read from the box — authoritative, and itself strong
+        # proof this is a real medicine.
+        medicine = ocr_name
+        name_source = "OCR text"
+        ok = True
+        reason = (f"OCR text matches known medicine '{ocr_name}' "
+                  f"({name_score:.0f}% similarity)")
+    elif _has_readable_text(ocr_text):
+        # The box text was read clearly, yet it matches NONE of our medicines.
+        # The name is printed on the box, so this is strong evidence the medicine
+        # is simply not in our database — we must NOT fall back to the CNN's
+        # forced guess among its 5 classes (that wrongly labelled e.g. a Myoflex
+        # tube as "Augmentin"). Use is_medicine() only to tell an unknown
+        # *medicine* apart from a non-medicine image with text.
         ok, reason = is_medicine(ocr_text, confidence, known_names)
+        result["medicine_name"] = None
+        result["name_source"] = "OCR text"
+        result["is_medicine"] = ok
+        if ok:
+            result["status"] = "unrecognized"
+            result["reason"] = ("Readable text found, but it matches no medicine "
+                                "in the database.")
+        else:
+            result["status"] = "rejected"
+            result["reason"] = reason
+        cursor.close()
+        db.close()
+        return result
+    else:
+        # Too little readable text (blurry/dark box) to identify the name from
+        # the text — fall back to the CNN's visual guess as a last resort.
+        medicine = result_cnn
+        name_source = "CNN"
+        if medicine == "other":
+            ok = False
+            reason = f"CNN classified the image as 'other' ({confidence:.1f}%)"
+        else:
+            ok, reason = is_medicine(ocr_text, confidence, known_names)
 
+    result["medicine_name"] = medicine
+    result["name_source"] = name_source
     result["is_medicine"] = ok
     result["reason"] = reason
 

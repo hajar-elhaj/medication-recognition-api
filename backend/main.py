@@ -44,6 +44,11 @@ if r["status"] == "rejected":
     print("\n>> Rejected: this image does not appear to be a medicine box.")
     raise SystemExit(0)
 
+if r["status"] == "unrecognized":
+    print("\n>> Unrecognized: the box text was read, but it matches no medicine "
+          "in the database.")
+    raise SystemExit(0)
+
 # ── FINAL RESULT ────────────────────────────────────────────────────────────
 print("\n" + "=" * 50)
 print("FINAL RESULT")

@@ -372,15 +372,17 @@
 
     // Status badge + headline
     const statusMap = {
-      matched:   { cls: "ok",   text: "Exact variant" },
-      partial:   { cls: "warn", text: "Dosage not confirmed" },
-      not_in_db: { cls: "warn", text: "Not in database" },
-      rejected:  { cls: "bad",  text: "Not a medicine" },
+      matched:      { cls: "ok",   text: "Exact variant" },
+      partial:      { cls: "warn", text: "Dosage not confirmed" },
+      not_in_db:    { cls: "warn", text: "Not in database" },
+      unrecognized: { cls: "warn", text: "Unrecognized medicine" },
+      rejected:     { cls: "bad",  text: "Not a medicine" },
     };
     let s = statusMap[d.status] || { cls: "warn", text: d.status };
     // If the name was NOT read from the box (CNN fallback), the whole result is
     // a visual guess we couldn't verify — never show it as a confident match.
-    if (d.status !== "rejected" && d.name_source !== "OCR text") {
+    // (Skip this for unrecognized/rejected, which are already honest verdicts.)
+    if (!["rejected", "unrecognized"].includes(d.status) && d.name_source !== "OCR text") {
       s = { cls: "warn", text: "Unverified — visual guess" };
     }
     html += `<span class="badge ${s.cls}">${s.text}</span>`;
@@ -389,6 +391,17 @@
     if (d.status === "rejected") {
       html += `<p class="med-name" style="color:var(--bad)">Image rejected</p>`;
       html += `<p style="color:var(--muted)">${d.reason || ""}</p>`;
+      infoCard.innerHTML = html + techDetails(d);
+      result.classList.add("show");
+      return;
+    }
+
+    // Unrecognized: the text was read clearly, but it's not a medicine we know.
+    // We deliberately do NOT show a guessed name here — that's the whole point.
+    if (d.status === "unrecognized") {
+      html += `<p class="med-name" style="color:var(--warn)">Medicine not recognized</p>`;
+      html += `<p style="color:var(--muted)">${d.reason ||
+        "The text was read, but it doesn't match any medicine in our database."}</p>`;
       infoCard.innerHTML = html + techDetails(d);
       result.classList.add("show");
       return;
