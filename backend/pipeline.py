@@ -106,9 +106,11 @@ def recognize(image_path):
         # The name is printed on the box, so this is strong evidence the medicine
         # is simply not in our database — we must NOT fall back to the CNN's
         # forced guess among its 5 classes (that wrongly labelled e.g. a Myoflex
-        # tube as "Augmentin"). Use is_medicine() only to tell an unknown
-        # *medicine* apart from a non-medicine image with text.
-        ok, reason = is_medicine(ocr_text, confidence, known_names)
+        # tube as "Augmentin"). Pass confidence=0 so is_medicine() decides purely
+        # on pharmaceutical keywords in the text — not on the CNN's visual guess.
+        # A candy box or random object may fool the CNN but won't have keywords
+        # like "mg", "comprimé", "قرص", etc. in its text.
+        ok, reason = is_medicine(ocr_text, 0, known_names)
         result["medicine_name"] = None
         result["name_source"] = "OCR text"
         result["is_medicine"] = ok

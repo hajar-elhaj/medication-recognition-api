@@ -6,11 +6,15 @@ or it falls back to the default sample below.
 
     py main.py "C:\\path\\to\\box.jpg"
 """
+import os
 import sys
 
 from pipeline import recognize
 
-DEFAULT_IMAGE = r"C:\Users\frita\OneDrive\Desktop\medication-recognition-api\dataset\train\ventoline\images (7).jpg"
+DEFAULT_IMAGE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "dataset", "train", "ventoline", "images (7).jpg",
+)
 
 image_path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_IMAGE
 

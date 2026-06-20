@@ -90,6 +90,8 @@ _FORM_KEYWORDS = [
     ("ampoule", "solution injectable"),
     ("gelule", "gélule"),
     ("sachet", "sachet"),
+    ("suppositoire secable", "suppositoire sécable"),
+    ("suppositoire", "suppositoire"),
     ("suspension buvable", "sirop"),
     ("sirop", "sirop"),
     ("comprime", "comprimé"),
@@ -106,6 +108,9 @@ _FORM_KEYWORDS = [
     ("امبولة", "solution injectable"),
     ("كيس", "sachet"),
     ("شراب", "sirop"),
+    ("تحميلة قابلة للتقسيم", "suppositoire sécable"),
+    ("تحميلة", "suppositoire"),
+    ("لبوس", "suppositoire"),
     ("قرص", "comprimé"),
 ]
 
