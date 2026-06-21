@@ -4,28 +4,47 @@ A computer-vision system that recognizes medications from a photo of their
 packaging. It combines a CNN image classifier with multilingual OCR
 (French + Arabic), then matches the result against a medication database to
 return the medicine's name, dosage, pharmaceutical form, and usage — in both
-French and Arabic. It is exposed as a REST API and comes with a simple web
+French and Arabic. It is exposed as a REST API and ships with a simple web
 frontend.
 
-> Academic project — Master IT. Supervised by Abdelhak Mahmoudi.
+> **Academic project — Master IT, Mohammed V University (Faculty of Sciences, Rabat).**
+> Authors: **Hajar El Haj** & **Ikram Belmalhouz**.
+> Supervisor: **Pr. Abdelhak Mahmoudi** · Co-supervisor: **Saad Frihi**.
+
+---
+
+## Demo at a glance
+
+Upload a photo of a medicine box → the system returns one of three honest
+verdicts and, when recognized, the full bilingual details:
+
+| Verdict | Meaning |
+|---------|---------|
+| **recognized** (`matched` / `partial`) | The name was read and matched to the database; dosage & form identified when readable. |
+| **unrecognized** | The text was read clearly, but it matches no medicine in the database. |
+| **rejected** | Not a medicine box (e.g. an object or animal), or the text was unreadable. |
+
+The system **never invents an identity**: an *exact* dosage/form is reported
+only when the dosage was actually read from the box.
 
 ---
 
 ## Features
 
-- **CNN classification** — MobileNetV2 (transfer learning) predicts the medicine
-  from the image.
-- **Name recognition from text** — the medicine name is read from the box via
-  OCR + fuzzy matching (RapidFuzz). This is the primary, most reliable signal;
-  the CNN is a fallback. Works for Latin **and** Arabic-only boxes.
-- **Multilingual OCR** — EasyOCR reads both French and Arabic text.
-- **Adaptive image preprocessing** — OpenCV analyzes each image (brightness,
+- **Name recognition from text (primary)** — the medicine name is read from the
+  box via OCR + fuzzy matching (RapidFuzz). This is the most reliable signal;
+  the CNN is only a fallback. Works for Latin **and** Arabic-only boxes.
+- **CNN classification (fallback)** — MobileNetV2 (transfer learning) predicts
+  the medicine when no name can be read, and helps reject non-medicines.
+- **Multilingual OCR** — EasyOCR reads both French and Arabic text (two separate
+  readers, merged).
+- **Adaptive image preprocessing** — OpenCV measures each image (brightness,
   contrast, sharpness) and applies only the corrections it needs (CLAHE,
   unsharp mask, bilateral filter).
-- **Dosage & form extraction** — robust to OCR quirks: handles split number/unit,
+- **Dosage & form extraction** — robust to OCR quirks: split number/unit,
   French long forms (`microgrammes`), symbols (`µg`), Arabic units (`مجم`, `ملغ`,
   …) and both Arabic numeral systems (`٠-٩` and `۰-۹`).
-- **Input validation** — rejects images that are not medicine boxes.
+- **Three-way input validation** — recognized / unrecognized / rejected.
 - **Bilingual output** — name, form, and usage in French and Arabic.
 - **REST API** with automatic interactive documentation (Swagger UI).
 - **Web frontend** — drag-and-drop upload with a clean result card.
@@ -46,8 +65,8 @@ Image
   → Result (FR + AR)
 ```
 
-The orchestration lives in `pipeline.py` and is shared by both the API
-(`app.py`) and the command-line demo (`main.py`).
+Orchestration lives in `pipeline.py`, shared by both the API (`app.py`) and the
+command-line demo (`main.py`).
 
 ---
 
@@ -80,13 +99,18 @@ medication-recognition-api/
 │   ├── matcher.py        # name matching + dosage/form variant matching
 │   ├── validation.py     # "is this a medicine box?" checks
 │   ├── db.py             # MySQL connection
-│   ├── train.py          # CNN training script
+│   ├── train.py          # CNN training script (optional)
 │   ├── fetch_other.py    # downloads the "other" (non-medicine) class
-│   ├── db_setup.sql      # adds the `form` column (one-time)
+│   ├── db_setup.sql      # creates + seeds the database (schema + 33 variants)
 │   ├── .env.example      # template for DB credentials
-│   └── model/            # trained model + class_names.json
+│   └── model/
+│       ├── medicine_model.h5    # trained CNN (committed, ~9 MB)
+│       └── class_names.json     # class order used at inference
 ├── frontend/
 │   └── index.html        # web UI (open in a browser)
+├── evaluation/
+│   ├── images/           # 20 fresh test images
+│   └── results.md        # full evaluation report & metrics
 ├── dataset/              # training/test images per class
 ├── requirements.txt
 └── README.md
@@ -105,15 +129,16 @@ medication-recognition-api/
 pip install -r requirements.txt
 ```
 
-### 3. Set up the database
-Create the database and table, then load your medicine data. The schema uses
-these columns: `name`, `dosage`, `form`, `form_ar`, `name_ar`, `usage_fr`,
-`usage_ar`, `usage_description`.
-
-If you are adding the `form` column to an existing table, run:
+### 3. Create and seed the database
+`backend/db_setup.sql` is self-contained: it creates the `medicines_db`
+database, the `medicines` table, and inserts all 33 medicine variants (with
+French + Arabic names, forms, and usages). Run it once:
 ```bash
-mysql -u root -p medicines_db < backend/db_setup.sql
+mysql --default-character-set=utf8mb4 -u root -p < backend/db_setup.sql
 ```
+> ⚠️ **Keep `--default-character-set=utf8mb4`.** The Windows `mysql` client
+> defaults to `cp850`, which corrupts the Arabic and accented-French text on
+> import (you would see mojibake like `fi├¿vre`). The flag forces UTF-8.
 
 ### 4. Configure credentials
 Copy the example env file and fill in your MySQL password:
@@ -129,6 +154,11 @@ DB_NAME=medicines_db
 ```
 (`.env` is gitignored — credentials are never committed.)
 
+> **Reproducibility note.** The trained CNN model
+> (`backend/model/medicine_model.h5`, ~9 MB) is committed to the repository, so
+> the project runs after a fresh clone **without retraining**. You only need the
+> three steps above (dependencies, database, credentials).
+
 ---
 
 ## Running
@@ -138,7 +168,7 @@ DB_NAME=medicines_db
 cd backend
 python -m uvicorn app:app --reload
 ```
-Then open the interactive docs to test it in your browser:
+Then open the interactive docs in your browser:
 
 **http://localhost:8000/docs**
 
@@ -153,6 +183,13 @@ With the API running (Option A), open `frontend/index.html` in your browser
 cd backend
 python main.py "C:\path\to\medicine.jpg"
 ```
+Run with no argument to use the bundled sample image:
+```bash
+python main.py
+```
+
+> Good images to try are in `evaluation/images/` — e.g. `smecta.jpg` (exact
+> match), `doliprane_in_arabic.webp` (Arabic box), `candy.webp` (rejected).
 
 ---
 
@@ -182,7 +219,8 @@ Upload an image (multipart form field **`file`**). Returns JSON, e.g.:
 }
 ```
 `status` is one of: `matched` (exact variant), `partial` (medicine known, exact
-dosage/form not confirmed), `not_in_db`, or `rejected` (not a medicine).
+dosage/form not confirmed), `unrecognized` (readable text, no DB match),
+`not_in_db`, or `rejected` (not a medicine).
 
 ---
 
@@ -191,10 +229,27 @@ dosage/form not confirmed), `not_in_db`, or `rejected` (not a medicine).
 The medicine **name** is taken from the **printed text** (OCR + fuzzy matching),
 not the CNN — the name on the box is the most reliable identifier, and the CNN
 (trained on a small dataset) confuses visually similar boxes. The CNN is used
-only as a fallback when no name is readable in the text.
+only as a fallback when no name is readable, and to help reject non-medicines.
 
 An **exact** dosage/form is reported only when the dosage was actually read from
 the box, so the system never asserts a dosage it did not see.
+
+---
+
+## Evaluation
+
+The system was evaluated on **20 fresh images** (never used in training):
+known and unknown medicines, blurry photos, Arabic-only boxes, rotated/flipped
+boxes, and non-medicine objects. Headline results:
+
+| Metric | Result |
+|--------|--------|
+| Known medicines correctly named | **11 / 11 — 100 %** |
+| No false medicine identity shown | **17 / 20 — 85 %** |
+| Non-medicines correctly rejected | **2 / 2 — 100 %** |
+
+Full methodology, per-image results, and a limitations analysis are in
+[`evaluation/results.md`](evaluation/results.md).
 
 ---
 
@@ -215,9 +270,9 @@ native-Windows GPU support), but a single CNN prediction is fast regardless.
 
 ---
 
-## Training the CNN (optional)
+## Retraining the CNN (optional)
 
-To retrain the classifier from the `dataset/` folder:
+The trained model is already included. To retrain from the `dataset/` folder:
 ```bash
 cd backend
 python fetch_other.py   # downloads the non-medicine "other" class (once)

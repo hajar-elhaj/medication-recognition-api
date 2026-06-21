@@ -1,5 +1,3 @@
-backend/model/medicine_model.h5
-
 # Secrets - never commit credentials
 .env
 backend/.env
@@ -7,3 +5,6 @@ backend/.env
 # Python
 __pycache__/
 *.pyc
+
+# Note: the trained CNN model (backend/model/medicine_model.h5, ~9 MB) IS
+# committed so the project runs after a fresh clone without retraining.

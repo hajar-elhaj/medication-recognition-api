@@ -16,4 +16,6 @@ def get_connection():
         user=os.getenv("DB_USER", "root"),
         password=os.getenv("DB_PASSWORD", ""),
         database=os.getenv("DB_NAME", "medicines_db"),
+        charset="utf8mb4",          # ensure Arabic / accented French read as UTF-8
+        use_unicode=True,
     )
